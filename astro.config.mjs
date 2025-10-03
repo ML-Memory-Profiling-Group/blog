@@ -5,8 +5,7 @@ import sitemap from '@astrojs/sitemap';
 // https://astro.build/config
 export default defineConfig({
   site: 'https://ML-Memory-Profiling-Group.github.io/blog',
-  // Only use base path in production (GitHub Pages)
-  base: '/',
+  base: '/blog',
   integrations: [sitemap()],
   markdown: {
     shikiConfig: {
