@@ -8,4 +8,6 @@ tags: [GPU]
 ---
 ![Alt text](/blog/intro-to-llm-profiling/nvidia_captain.avif)
 
-### Introduction
+# Introduction
+
+# Basics of LLM 
