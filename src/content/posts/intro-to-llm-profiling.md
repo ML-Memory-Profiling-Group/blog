@@ -1,7 +1,7 @@
 ---
 title: 'Introduction to LLM Profiling'
 description: 'A profiling tutorial for Nvidia GPUs with two different GPT-2 workflow'
-pubDate: 2022-01-25
+pubDate: 2025-10-14
 author: 'Zehao Lu, Prasenjit Chakraborty'
 tags: [GPU]
 ---
@@ -142,7 +142,7 @@ If we compare the ratio of GPU time, we can find that the attention increased fr
 
 On the other side, the gap of the wall clock time enlarges, suggesting that there are factors other than the CUPTI and GPU usage that further drops down the overall performance. We suggest that the additional dropdown is probably caused by launch overhead. To demonstrate this, we present a ratio chart of Eigen’s kernel launches. By comparing the kernel launch ratio with the wall-clock time ratio, a clear linear relationship emerges, strongly indicating that launch overhead is probably the primary contributor to the wall-clock time in eigen llm.cpp.
 
-To further explain the difference, we conducted an experiment using a simple CUDA program and did some calculations. In this program, we launched 440 kernels with minimum operations. The average wall clock time we got is around 130 microseconds per kernel, which should mostly be launch overhead.   **The number is not matching\! The data we got is around 100k microsecond, not the same magnitude. My previous calculation matches 100k, and I copied the logs to the excel. However, I can no longer reproduce that number..**
+To further explain the difference, we conducted an experiment using a simple CUDA program and did some calculations. In this program, we launched 440 kernels with minimum operations. The average wall clock time we got is around 130 microseconds per kernel, which should mostly be launch overhead.   **The number is not matching\! The data we got is around 100k microsecond, not the same magnitude. My previous calculation matches 100k, and I copied the logs to the excel. However, I can no longer reproduce that number.. Figuring out what is causing the discrepency...**
 
 Finally, the developer of the cccl llm.cpp implementation applies several optimizations to improve cache efficiency — for instance, using cache streaming to allow one-time data to bypass the cache, and employing reverse iteration to increase cache hits at the tail of arrays. In contrast, the Eigen version lacks such low-level optimizations, at least from the user side. As a result, the cccl version achieves higher cache hit rates and fewer dram accesses, which directly contributes to its shorter execution time.
 
