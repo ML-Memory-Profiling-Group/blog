@@ -93,7 +93,11 @@ All the activities records and metrics collected will be grouped by range name a
 ## Kernel Invocations
 
 Kernel launch is where CUDA assigns computation tasks to the GPU. The number of kernels and the size of blocks and grids can produce profound impact on system performance. Ideally, each kernel should have enough blocks and threads so that it doesn’t under utilize the compute resources. On the other hand, too many blocks, threads or kernel launches themselves will accumulate overheads and severely hurt the overall performance. In this section, we will see how the two implementations differ and why they differ. In later sections, we will discuss how these differences impact the performance
-![][kernel-num]  
+
+| Framework / Range         | attention | lm_head | ln1 | ln2 | lnf | mlp | residual1 | residual2 | softmax_cross_entropy |
+|----------------------------|------------|----------|-----|-----|-----|-----|------------|------------|------------------------|
+| **Eigen**                 | 440        | 1        | 2   | 3   | 3   | 5   | 1          | 1          | 10                     |
+| **CCCL**                  | 8          | 1        | 1   | 1   | 1   | 4   | 1          | 1          | 1                      |
 
 If we compare the two implementations in forward process, it is obvious that the Eigen version launches more kernels, especially in the attention. In the cccl version, it is implemented in a way that all the computation is fused in one global kernel. Only big ranges, like mlp and attention, will employ some helper device kernels. Whereas the kernel launches in Eigen are not explicit. In other words, the number of kernels and their grid/block sizes are dependent on the implementation of Eigen. It is not guaranteed that each assignment of eigen will generate only one kernel, and that’s why generally the Eigen version launches more kernels than the cccl version. This is the reason why most ranges of Eigen llm.cpp launch more kernels than the cccl one.
 
@@ -117,7 +121,7 @@ for (int b = 0; b < B; ++b)
 
 This piece of code is looping over batch size and number of heads. There are two matrix multiplications and softmax in each iteration, which will produce quite a lot of kernels. With B=4 and NH=12, all these kernels are repeated 48 times, so no surprise so many kernels are launched. This exemplifies a pitfall of GPU programming. It is common and fine to use for loops when we write programs for CPU, but the misuse of for loops on GPU programs can heavily downgrade the performance. We will discuss the performance drop in the next section.
 
-|  | eigen forward | cccl forward |
+|  | eigen | cccl |
 | :---- | :---- | :---- |
 | min | 1 | 16 |
 | max | 3144 | 1536 |
