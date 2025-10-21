@@ -161,10 +161,11 @@ The result is presented here:
 | feed_forward   | 90.354                         | 9.172                          |
 | residual2      | 15.064                         | 13.840                         |
 
-We can see that the avg gap mostly lies between 3~15µs, which matches(really?) the maginitude we got from helloworld. This indicates that the extra wall clock time compared to GPU execution time is mostly launch overheads. Other than this, there are other possibilities of the time spent:
+We can see that the avg gap mostly lies between 3~15µs, which matches(really?) the maginitude we got from helloworld. This indicates that the extra wall clock time compared to GPU execution time is mostly launch overheads. Other than this, there are other possibilities that contributes to the time spent:
 * Allocation and release of resources, e.g. registers and shared memory, especially for the attention of eigen.
-* Synchronized H2D or D2H transfer. 
-* 
+* Synchronized Host-to-Device or Device-to-Host memory transfer, copy or memset. 
+* Execution time of CPU instructions.
+* Overheads for library to choose appropriate kernels.
 
 ## SASS Instructions
 
