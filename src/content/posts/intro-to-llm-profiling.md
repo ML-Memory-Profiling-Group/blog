@@ -94,10 +94,10 @@ All the activities records and metrics collected will be grouped by range name a
 
 Kernel launch is where CUDA assigns computation tasks to the GPU. The number of kernels and the size of blocks and grids can produce profound impact on system performance. Ideally, each kernel should have enough blocks and threads so that it doesn’t under utilize the compute resources. On the other hand, too many blocks, threads or kernel launches themselves will accumulate overheads and severely hurt the overall performance. In this section, we will see how the two implementations differ and why they differ. In later sections, we will discuss how these differences impact the performance
 
-| Framework / Range         | attention | lm_head | ln1 | ln2 | lnf | mlp | residual1 | residual2 | softmax_cross_entropy |
-|----------------------------|------------|----------|-----|-----|-----|-----|------------|------------|------------------------|
-| **Eigen**                 | 440        | 1        | 2   | 3   | 3   | 5   | 1          | 1          | 10                     |
-| **CCCL**                  | 8          | 1        | 1   | 1   | 1   | 4   | 1          | 1          | 1                      |
+| Framework / Range         | attention | ln1 | ln2  | mlp | residual1 | residual2 |
+|----------------------------|------------|----------|-----|-----|-----|------------|
+| **Eigen**                 | 440        | 2   | 3   | 5   | 1          | 1          |
+| **CCCL**                  | 8          | 1   | 1   | 4   | 1          | 1          |
 
 If we compare the two implementations in forward process, it is obvious that the Eigen version launches more kernels, especially in the attention. In the cccl version, it is implemented in a way that all the computation is fused in one global kernel. Only big ranges, like mlp and attention, will employ some helper device kernels. Whereas the kernel launches in Eigen are not explicit. In other words, the number of kernels and their grid/block sizes are dependent on the implementation of Eigen. It is not guaranteed that each assignment of eigen will generate only one kernel, and that’s why generally the Eigen version launches more kernels than the cccl version. This is the reason why most ranges of Eigen llm.cpp launch more kernels than the cccl one.
 
@@ -137,18 +137,34 @@ Time consumption is one of the key metrics of any type of program. Here we will 
 
 We should notice that both times will rise significantly if CUPTI is involved. We have verified it through comparing the wall clock time without profiling and GPU time with profiling. If the GPU time we measured doesn’t contain the overhead, the profiled GPU time should not exceed the non-profiled wall clock time because the wall clock time includes more items including overheads and bookkeeping than GPU time. The data shows that for some ranges do have a higher profiled GPU time than the non-profiled wall clock time. Therefore all the data we have shown will include CUPTI overheads.
 
-![][forward-wallclock-time]![][forward-wallclock-time-ratio]![][kernel-num-ratio]![][forward-gpu-time]![][forward-gpu-time-ratio]  
-The above charts are the wall clock time(in microseconds) and GPU time(in nanoseconds) of all the ranges and their ratio. It should be very clear that there is a huge overall performance gap between eigen and cccl implementation if we compare the wall clock time. Many factors contribute to these gaps. 
+![][forward-gpu-time]![][forward-gpu-time-ratio] 
+The above charts are the wall clock time(in microseconds) and GPU time(in nanoseconds) of all the ranges and their ratio. A huge overall performance gap between eigen and cccl implementation are presented and many factors contribute to these gaps. 
 
-Let’s start from the GPU time. Even without involving any factors on the CPU side, the gap between the two versions is still quite large. The biggest contributors to the GPU time are the attention, lm\_head and softmax\_cross\_entropy. This makes sense because all of them are both compute and memory heavy. The reason for attention to take so much time is because it has large matrix multiplication to get Q, K, V and the correlations. Additionally, softmax is also an expensive operation because it requires the sum and max of each token. Similarly, softmax\_cross\_entropy also calculates softmax, and in addition to that, to get the cross entropy, it needs to calculate the max of all the logits. Although the lm\_head is essentially a matrix multiplication, it operates over the vocabulary dimension rather than the embedding dimension. This makes the weight matrix extremely large, resulting in significantly higher computation time and memory usage. Consequently, these ranges are the most resource-intensive among all and take most of the time.
+Let’s start from the GPU time. Without considering CPU side, the gap between the two versions is still quite large. The biggest contributors to the GPU time are the attention and mlp ranges, which is as expected because according to the roofline calculation, these two ranges did most FLOPs and MOPs. However, if we compare the ratio of GPU time between the two version, we can observe that the attention range of the eigen llm.cpp significantly outweighs the mlp range, whereas in cccl llm.cpp, these ranges are relatively equivalent. According to the prior section, we know that enormous small kernels are launched within the attention of eigen llm.cpp. This causes several problems:
+* Reduced locality on L1 because L1 is flushed between kernels.
+* Poor latency hiding due to the shortage of blocks and short kernels.
 
-If we compare the ratio of GPU time, we can find that the attention increased from about 10% to 35%, the biggest jump among all the ranges. This suggests that it is the main contributor to the gap of GPU time. Given that eigen llm.cpp launches 440 kernels for attention, it has a huge number of metrics to collect because all metrics are collected for every kernel. With that said, it’s fair to believe that the big jump of the GPU time for attention is due to CUPTI overhead. Layer norms also take more GPU time relative to the cccl version. That’s probably because the kernel of the layer norm only has one block. The low SM utilization and dram throughput can cause the GPU execution time to increase significantly.
+Another noteworthy point is the developer of the cccl llm.cpp implementation applies several optimizations to improve cache efficiency — for instance, using cache streaming to allow one-time data to bypass the cache, and employing reverse iteration to increase cache hits at the tail of arrays. In contrast, the Eigen version lacks such low-level optimizations, at least from the user side. As a result, the cccl version achieves higher cache hit rates and fewer dram accesses, which directly contributes to its shorter execution time.
 
-On the other side, the gap of the wall clock time enlarges, suggesting that there are factors other than the CUPTI and GPU usage that further drops down the overall performance. We suggest that the additional dropdown is probably caused by launch overhead. To demonstrate this, we present a ratio chart of Eigen’s kernel launches. By comparing the kernel launch ratio with the wall-clock time ratio, a clear linear relationship emerges, strongly indicating that launch overhead is probably the primary contributor to the wall-clock time in eigen llm.cpp.
+![][forward-wallclock-time]![][forward-wallclock-time-ratio]
+On the other side, the gap of the wall clock time enlarges, suggesting that there are more factors outside GPU that further drops down the overall performance. We suggest that the additional dropdown is probably dorminated by launch overhead. To explain the difference, we conducted an experiment using a simple CUDA program and did some calculations. In this program, we launched 440 kernels with minimum FLOPS. The average wall clock time we got is around xxx microseconds per kernel, which should mostly be launch overhead. **Helloworld data needs update. Right now data is showing avg wall clock time/kernel is 3~15 microseconds. mlp of eigen is an outlier with 90 microseconds.** In comparison, we calculated the average gap between kernels using this formula:
+```math
+AvgLaunchOverhead = (RangeWallClockTime - GPUExecutionTime) / KernelNum
+```
+The result is presented here:
+| Layer         | Eigen Avg Gap (µs) | CCCL Avg Gap (µs) |
+|----------------|--------------------------------|--------------------------------|
+| ln1            | 5.136                          | 14.544                         |
+| attention      | 6.669                          | 5.053                          |
+| residual1      | 14.288                         | 13.128                         |
+| ln2            | 3.747                          | 14.064                         |
+| feed_forward   | 90.354                         | 9.172                          |
+| residual2      | 15.064                         | 13.840                         |
 
-To further explain the difference, we conducted an experiment using a simple CUDA program and did some calculations. In this program, we launched 440 kernels with minimum operations. The average wall clock time we got is around 130 microseconds per kernel, which should mostly be launch overhead.   **The number is not matching\! The data we got is around 100k microsecond, not the same magnitude. My previous calculation matches 100k, and I copied the logs to the excel. However, I can no longer reproduce that number.. Figuring out what is causing the discrepency...**
-
-Finally, the developer of the cccl llm.cpp implementation applies several optimizations to improve cache efficiency — for instance, using cache streaming to allow one-time data to bypass the cache, and employing reverse iteration to increase cache hits at the tail of arrays. In contrast, the Eigen version lacks such low-level optimizations, at least from the user side. As a result, the cccl version achieves higher cache hit rates and fewer dram accesses, which directly contributes to its shorter execution time.
+We can see that the avg gap mostly lies between 3~15µs, which matches(really?) the maginitude we got from helloworld. This indicates that the extra wall clock time compared to GPU execution time is mostly launch overheads. Other than this, there are other possibilities of the time spent:
+* Allocation and release of resources, e.g. registers and shared memory, especially for the attention of eigen.
+* Synchronized H2D or D2H transfer. 
+* 
 
 ## SASS Instructions
 
