@@ -90,6 +90,20 @@ GmpProfiler::getInstance()-\>pushRange/popRange is the API of our profiler that 
 All the activities records and metrics collected will be grouped by range name and accumulated or averaged among all the kernels’ data within the range, so that we can understand how each phase of the LLM performs.
 
 # Performance Analysis
+
+## Roofline Performance
+| SUB BLOCKS | NUM ELEMENTS | TOTAL SIZE (MB)|
+|------------|--------------|----------------|
+|Input | B * T * C | 0.75 |
+|Layer Norm | B * L * T * C | 2.25 |
+|Q, K, V | B * L * T * 3C | 6.75 |
+|SoftMAX(QKT) | B * L * H * T * T | 2.25 |
+|O | B * L * T * C | 2.25 |
+|Residual | B * L * T * C | 2.25 |
+|MLP1 | B * L * T * 4C | 9 |
+|MLP GeLU | B * L * T * 4C | 9 |
+|MLP2 | B * L * T * C | 2.25 |
+
 ## Kernel Invocations
 
 Kernel launch is where CUDA assigns computation tasks to the GPU. The number of kernels and the size of blocks and grids can produce profound impact on system performance. Ideally, each kernel should have enough blocks and threads so that it doesn’t under utilize the compute resources. On the other hand, too many blocks, threads or kernel launches themselves will accumulate overheads and severely hurt the overall performance. In this section, we will see how the two implementations differ and why they differ. In later sections, we will discuss how these differences impact the performance
