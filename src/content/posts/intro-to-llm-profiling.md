@@ -66,23 +66,9 @@ It can also be divided into multiple sets by the way it collects data, including
 For this blog, we built a GPU profiler on top of the Activities API and Range Profiling API to trace and profile. We won’t talk about the details about how our profiler is built, but rather we will focus on the performance data collected. In case you are interested, the profiler is available here(github\_link) and the corresponding tutorial in detail is also available here(blog\_link). Simply speaking, our profiler is able to separate code into logical blocks called “range” by wrapping the code with push and pop range functions, which defines the range we are interested in and would like to collect data from. Here is a sample code of how we wrapped and timed the range:
 
 ```cpp
-#ifdef TRAINING_FORWARD 
-
-      if(curr_step == 1 && curr_fwd_block == 1)
-
-        GmpProfiler::getInstance()->pushRange("MLP", GmpProfileType::CONCURRENT_KERNEL);
-
-#endif
-
-      GMP_TIMED("MLP", mlp_->Forward(ln2_y_2d_const, mlp_y_2d));
-
-#ifdef TRAINING_FORWARD
-
-      if(curr_step == 1 && curr_fwd_block == 1)
-
-        GmpProfiler::getInstance()->popRange("MLP", GmpProfileType::CONCURRENT_KERNEL);
-
-#endif
+  GmpProfiler::getInstance()->pushRange("MLP", GmpProfileType::CONCURRENT_KERNEL);
+  mlp_->Forward(ln2_y_2d_const, mlp_y_2d)
+  GmpProfiler::getInstance()->popRange("MLP", GmpProfileType::CONCURRENT_KERNEL);
 ```
 
 GmpProfiler::getInstance()-\>pushRange/popRange is the API of our profiler that collects both traces and metrics and defines the range. GMP\_TIMED is simply a macro to use C++ chrono to get the CPU time spent by the wrapped portion of the code and this is where the wall-clock time comes from.
@@ -108,6 +94,7 @@ All the activities records and metrics collected will be grouped by range name a
 
 Kernel launch is where CUDA assigns computation tasks to the GPU. The number of kernels and the size of blocks and grids can produce profound impact on system performance. Ideally, each kernel should have enough blocks and threads so that it doesn’t under utilize the compute resources. On the other hand, too many blocks, threads or kernel launches themselves will accumulate overheads and severely hurt the overall performance. In this section, we will see how the two implementations differ and why they differ. In later sections, we will discuss how these differences impact the performance
 
+| Number of Kernels in the Ranges |
 | Framework / Range         | attention | ln1 | ln2  | mlp | residual1 | residual2 |
 |----------------------------|------------|----------|-----|-----|-----|------------|
 | **Eigen**                 | 440        | 2   | 3   | 5   | 1          | 1          |
@@ -135,6 +122,7 @@ for (int b = 0; b < B; ++b)
 
 This piece of code is looping over batch size and number of heads. There are two matrix multiplications and softmax in each iteration, which will produce quite a lot of kernels. With B=4 and NH=12, all these kernels are repeated 48 times, so no surprise so many kernels are launched. This exemplifies a pitfall of GPU programming. It is common and fine to use for loops when we write programs for CPU, but the misuse of for loops on GPU programs can heavily downgrade the performance. We will discuss the performance drop in the next section.
 
+| Grid and Block Size |
 |  | Eigen | CCCL |
 | :---- | :---- | :---- |
 | min | 1 | 16 |
