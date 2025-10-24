@@ -94,7 +94,7 @@ All the activities records and metrics collected will be grouped by range name a
 
 Kernel launch is where CUDA assigns computation tasks to the GPU. The number of kernels and the size of blocks and grids can produce profound impact on system performance. Ideally, each kernel should have enough blocks and threads so that it doesn’t under utilize the compute resources. On the other hand, too many blocks, threads or kernel launches themselves will accumulate overheads and severely hurt the overall performance. In this section, we will see how the two implementations differ and why they differ. In later sections, we will discuss how these differences impact the performance
 
-| Number of Kernels in the Ranges |
+** Number of Kernels In The Ranges **
 | Framework / Range         | attention | ln1 | ln2  | mlp | residual1 | residual2 |
 |----------------------------|------------|----------|-----|-----|-----|------------|
 | **Eigen**                 | 440        | 2   | 3   | 5   | 1          | 1          |
@@ -122,7 +122,7 @@ for (int b = 0; b < B; ++b)
 
 This piece of code is looping over batch size and number of heads. There are two matrix multiplications and softmax in each iteration, which will produce quite a lot of kernels. With B=4 and NH=12, all these kernels are repeated 48 times, so no surprise so many kernels are launched. This exemplifies a pitfall of GPU programming. It is common and fine to use for loops when we write programs for CPU, but the misuse of for loops on GPU programs can heavily downgrade the performance. We will discuss the performance drop in the next section.
 
-| Grid and Block Size |
+** Grid And Block Size Statistics **
 |  | Eigen | CCCL |
 | :---- | :---- | :---- |
 | min | 1 | 16 |
@@ -154,11 +154,13 @@ Let’s start from the GPU time. Without considering CPU side, the gap between t
 Another noteworthy point is the developer of the CCCL llm.cpp implementation applied several optimizations to improve cache efficiency — for instance, using cache streaming to allow one-time data to bypass the cache, and employing reverse iteration to increase cache hits at the tail of arrays. In contrast, the Eigen version lacks such low-level optimizations, at least from the user side. As a result, the CCCL version achieves higher cache hit rates and fewer dram accesses, which directly contributes to its shorter execution time.
 
 ![][forward-wallclock-time]![][forward-wallclock-time-ratio]
-On the other side, the gap of the wall clock time enlarges, suggesting that there are more factors outside GPU that further drops down the overall performance. We suggest that the additional dropdown is probably dorminated by launch overhead. To explain the difference, we conducted an experiment using a simple CUDA program. In this program, we launched 440 kernels with minimum FLOPS. The average wall clock time we got is around xxx microseconds per kernel, which should mostly be launch overhead. **Helloworld data needs update. Right now our data is showing avg wall clock time/kernel is 3~15 microseconds. mlp of Eigen is an outlier with 90 microseconds.** In comparison, we calculated the average gaps between kernels to estimate the launch overheads of the two llm.cpp using this formula:
+On the other side, the gap of the wall clock time enlarges, suggesting that there are more factors outside GPU that further drops down the overall performance. We suggest that the additional dropdown is probably dorminated by launch overhead. To explain the difference, we conducted an experiment using a simple CUDA program. In this program, we launched 440 kernels with minimum FLOPS and MFLOPS and the average wall clock time we got is 12.4 microseconds per kernel, which should mostly be launch overhead. In comparison, we calculated the average gaps between kernels to estimate the launch overheads of the two llm.cpp using this formula:
 ```math
 AvgLaunchOverhead = (RangeWallClockTime - GPUExecutionTime) / KernelNum
 ```
 The result is presented here:
+
+** Average Gap Between Wall Clock Time And GPU Time **
 | Layer         | Eigen Avg Gap (µs) | CCCL Avg Gap (µs) |
 |----------------|--------------------------------|--------------------------------|
 | ln1            | 5.136                          | 14.544                         |
