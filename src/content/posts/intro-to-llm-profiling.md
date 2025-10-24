@@ -198,7 +198,7 @@ SASS (Streaming Assembler) is the low-level assembly language executed by NVIDIA
 
 Store instructions are similar to the load instructions. We choose residual as an example because it is relatively straightforward and only contains an element-wise add operation. The GPU should load two input matrices and store the output matrix. That’s why there are 2x load instructions and bytes compared to stores. You may also notice that even though both implementations load/store the same amount of data, the Eigen version executed only ¼ instructions of the CCCL version. This is because the Eigen version employs vectorized loads for contiguous elements so that each global load will load 4 floats instead of 1 float. We can calculate it through following this formula:
 ```math
-avg_bytes_per_thread = sass_bytes_loaded / sass_inst_issued / 32
+avg\_bytes\_per\_thread = sass\_bytes\_loaded / sass\_inst\_issued / 32
 ```
 The result of the Eigen version is 16 bytes per instruction, which is 4 floats per load. For the CCCL version, this number is reduced to 1 float per load. The vectorization is one optimization Eigen implicitly does for loads and stores automatically, which can reduce redundant instructions and issue overheads.
 
