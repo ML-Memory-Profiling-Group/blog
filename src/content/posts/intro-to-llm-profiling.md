@@ -162,7 +162,7 @@ Another noteworthy point is the developer of the CCCL llm.cpp implementation app
 ![][forward-wallclock-time]![][forward-wallclock-time-ratio]
 On the other side, the gap of the wall clock time enlarges, suggesting that there are more factors outside GPU that further drops down the overall performance. We suggest that the additional dropdown is probably dorminated by launch overhead. To explain the difference, we conducted an experiment using a simple CUDA program. In this program, we launched 440 kernels with minimum FLOPS and MFLOPS and the average wall clock time we got is 12.4 microseconds per kernel, which should mostly be launch overhead. In comparison, we calculated the average gaps between kernels to estimate the launch overheads of the two llm.cpp using this formula:
 ```math
-avg\_launch\_overhead = (range\_wall\_clockTime - gpu\_execution\_time) / kernel_num
+avg\_launch\_overhead = (range\_wall\_clock\_time - gpu\_execution\_time) / kernel_num
 ```
 The result is presented here:
 
@@ -220,7 +220,7 @@ In general, from L1 to L2 to dram, the sector metrics should gradually reduce. T
 
 Finally, after requests have been filtered through L1 and L2, they reach dram, whose bandwidth greatly affects the overall performance of the system. CUPTI provides dram\_\_throughput.avg.pct\_of\_peak\_sustained\_elapsed, a percentage showing how much of theoretical sustained peak throughput one kernel can use, but this metrics only measures per kernel throughput. If we calculate the average throughput through adding all the metrics in range and divide by number of kernels in range, in some extreme cases, it may show misleading throughput because it loses the information of time. For example, if we have 1 kernel that heavily utilizes 100% throughput for an hour and 99 kernels use 0% in just 1 second, we will get an average usage of 1%, which looks pretty off. Therefore, instead of directly averaging the throughput metrics provided by CUPTI, we calculate the overall throughput by doing
 ```math
- dram_throughput = total_accessed_sectors*32/sum_of_gpu_time.
+ dram_throughput = total_accessed_sectors * 32 / sum_of_gpu_time.
 ``` 
  More specifically,
  
