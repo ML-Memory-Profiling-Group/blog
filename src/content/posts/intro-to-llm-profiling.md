@@ -94,7 +94,7 @@ All the activities records and metrics collected will be grouped by range name a
 
 Kernel launch is where CUDA assigns computation tasks to the GPU. The number of kernels and the size of blocks and grids can produce profound impact on system performance. Ideally, each kernel should have enough blocks and threads so that it doesn’t under utilize the compute resources. On the other hand, too many blocks, threads or kernel launches themselves will accumulate overheads and severely hurt the overall performance. In this section, we will see how the two implementations differ and why they differ. In later sections, we will discuss how these differences impact the performance
 
-** Number of Kernels In The Ranges **
+**Number of Kernels In The Ranges**
 | Framework / Range         | attention | ln1 | ln2  | mlp | residual1 | residual2 |
 |----------------------------|------------|----------|-----|-----|-----|------------|
 | **Eigen**                 | 440        | 2   | 3   | 5   | 1          | 1          |
@@ -122,7 +122,7 @@ for (int b = 0; b < B; ++b)
 
 This piece of code is looping over batch size and number of heads. There are two matrix multiplications and softmax in each iteration, which will produce quite a lot of kernels. With B=4 and NH=12, all these kernels are repeated 48 times, so no surprise so many kernels are launched. This exemplifies a pitfall of GPU programming. It is common and fine to use for loops when we write programs for CPU, but the misuse of for loops on GPU programs can heavily downgrade the performance. We will discuss the performance drop in the next section.
 
-** Grid And Block Size Statistics **
+**Grid And Block Size Statistics**
 |  | Eigen | CCCL |
 | :---- | :---- | :---- |
 | min | 1 | 16 |
@@ -131,7 +131,13 @@ This piece of code is looping over batch size and number of heads. There are two
 | median | 4 | 320 |
 | avg warp/block | 23.51575188 | 8.282119391 |
 
-Another key aspect to understand when analyzing GPU kernels is the grid size and block size. We’ve included the statistics for all implementations. The results clearly show the Eigen implementation tends to launch most kernels with only a handful of blocks (often single-digit), while the CCCL version consistently launches around 160 blocks on average. This difference has major implications for GPU utilization. The Eigen llm.cpp kernels are, in effect, severely underutilizing the GPU’s compute resources. Our tests were conducted on an NVIDIA A100, which features 108 streaming multiprocessors (SMs). Ignoring stalls from data dependencies and assuming a single active CUDA stream, we can reason that since a block cannot span across multiple SMs, we need at least 108 blocks to fully occupy all SMs—one block per SM. However, the Eigen forward kernels only average about 2.7 blocks per launch, which means that roughly 2% of the SMs are actually being used—an astonishingly low figure for such a powerful GPU. It’s worth noting that we assume the scheduler assigns blocks to idle SMs first, rather than sharing SMs among active blocks, since this policy maximizes utilization. NVIDIA’s exact block scheduling policy isn’t publicly documented, so this conclusion is based on empirical observation and reasonable inference. Regardless of the precise scheduling details, the number of blocks required for full utilization must be at least 108, so our conclusion about underutilization remains valid.
+Another key aspect to understand when analyzing GPU kernels is the grid size and block size. We’ve included the statistics for all implementations. The results clearly show the Eigen implementation tends to launch most kernels with only a handful of blocks (often single-digit), while the CCCL version consistently launches around 160 blocks on average. This difference has major implications for GPU utilization. The Eigen llm.cpp kernels are, in effect, severely underutilizing the GPU’s compute resources. Our tests were conducted on an NVIDIA A100, which features 108 streaming multiprocessors (SMs). Ignoring stalls from data dependencies and assuming a single active CUDA stream, we can reason that since a block cannot span across multiple SMs, we need at least 108 blocks to fully occupy all SMs—one block per SM. Our estimation of SM utilization is:
+
+```math
+sm_utilization = max(device_sm_num, grid_launched_sm)/device_sm_num * 100%
+```
+
+This formula is based on the assumption of single device and no parallel kernel execution. The Eigen llm.cpp forward kernels only launch about 2.7 blocks per launch on average, which means that roughly 2% of the SMs are actually being used—an astonishingly low figure for such a powerful GPU. It’s worth noting that we assume the scheduler assigns blocks to idle SMs first, rather than sharing SMs among active blocks, since this policy maximizes utilization. NVIDIA’s exact block scheduling policy isn’t publicly documented, so this conclusion is based on empirical observation and reasonable inference. Regardless of the precise scheduling details, the number of blocks required for full utilization must be at least 108, so our conclusion about underutilization remains valid.
 
 ## Wall Clock Time and GPU execution Time
 
@@ -160,7 +166,7 @@ AvgLaunchOverhead = (RangeWallClockTime - GPUExecutionTime) / KernelNum
 ```
 The result is presented here:
 
-** Average Gap Between Wall Clock Time And GPU Time **
+**Average Gap Between Wall Clock Time And GPU Time**
 | Layer         | Eigen Avg Gap (µs) | CCCL Avg Gap (µs) |
 |----------------|--------------------------------|--------------------------------|
 | ln1            | 5.136                          | 14.544                         |
@@ -216,7 +222,8 @@ Finally, after requests have been filtered through L1 and L2, they reach dram, w
 ```math
  dram_throughput = total_accessed_sectors*32/sum_of_gpu_time.
 ``` 
- More specifically, 
+ More specifically,
+ 
  ```math
  (dram__sectors_read.sum + dram__sectors_write.sum) * 32 / gpu__time_duration.max
  ```
