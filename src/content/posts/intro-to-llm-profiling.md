@@ -162,7 +162,7 @@ Another noteworthy point is the developer of the CCCL llm.cpp implementation app
 ![][forward-wallclock-time]![][forward-wallclock-time-ratio]
 On the other side, the gap of the wall clock time enlarges, suggesting that there are more factors outside GPU that further drops down the overall performance. We suggest that the additional dropdown is probably dorminated by launch overhead. To explain the difference, we conducted an experiment using a simple CUDA program. In this program, we launched 440 kernels with minimum FLOPS and MFLOPS and the average wall clock time we got is 12.4 microseconds per kernel, which should mostly be launch overhead. In comparison, we calculated the average gaps between kernels to estimate the launch overheads of the two llm.cpp using this formula:
 ```math
-AvgLaunchOverhead = (RangeWallClockTime - GPUExecutionTime) / KernelNum
+avg\_launch\_overhead = (range\_wall\_clockTime - gpu\_execution\_time) / kernel_num
 ```
 The result is presented here:
 
